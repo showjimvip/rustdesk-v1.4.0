@@ -1,0 +1,95 @@
+name: Build Windows Custom
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  LLVM_VERSION: "15.0.6"
+  FLUTTER_VERSION: "3.24.5"
+  SCITER_RUST_VERSION: "1.75"
+  VCPKG_COMMIT_ID: "6f29f12e82a8293156836ad81cc9bf5af41fe836"
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    timeout-minutes: 360
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Apply custom server defaults
+        shell: pwsh
+        run: |
+          $p = "libs/hbb_common/src/config.rs"
+          $s = Get-Content -Raw -Encoding UTF8 $p
+          $s = $s.Replace('pub const RENDEZVOUS_SERVERS: &[&str] = &["rs-ny.rustdesk.com"];', 'pub const RENDEZVOUS_SERVERS: &[&str] = &["xqstudio.x3322.net"];')
+          $s = $s.Replace('pub const RS_PUB_KEY: &str = "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=";', 'pub const RS_PUB_KEY: &str = "zAIi1xBxIeRzLzBjx3Zw3FMGoURnK83Gq4fgIplImDw=";')
+          Set-Content -Path $p -Value $s -Encoding UTF8
+          if (-not (Select-String -Path $p -Pattern 'xqstudio.x3322.net' -Quiet)) { throw "ID server patch failed" }
+          if (-not (Select-String -Path $p -Pattern 'zAIi1xBxIeRzLzBjx3Zw3FMGoURnK83Gq4fgIplImDw=' -Quiet)) { throw "key patch failed" }
+
+      - name: Install LLVM and Clang
+        uses: KyleMayes/install-llvm-action@v1
+        with:
+          version: ${{ env.LLVM_VERSION }}
+
+      - name: Install flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Replace engine with rustdesk custom flutter engine
+        shell: pwsh
+        run: |
+          flutter doctor -v
+          flutter precache --windows
+          Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
+          Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
+          $binDir = Split-Path (Get-Command flutter).Source -Parent
+          $engineDir = Join-Path $binDir "cache\artifacts\engine\windows-x64-release"
+          Copy-Item -Force windows-x64-release\* $engineDir
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.SCITER_RUST_VERSION }}
+          targets: x86_64-pc-windows-msvc
+
+      - name: Setup vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: C:\vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+
+      - name: Install vcpkg dependencies
+        shell: bash
+        env:
+          VCPKG_DEFAULT_HOST_TRIPLET: x64-windows-static
+        run: |
+          $VCPKG_ROOT/vcpkg install --triplet x64-windows-static --x-install-root="$VCPKG_ROOT/installed"
+
+      - name: Generate flutter rust bridge
+        shell: bash
+        run: |
+          cargo install cargo-expand --version 1.0.95 --locked
+          cargo install flutter_rust_bridge_codegen --version 1.80.1 --features "uuid" --locked
+          pushd flutter && flutter pub get && popd
+          flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart --c-output ./flutter/macos/Runner/bridge_generated.h
+
+      - name: Build rustdesk
+        run: |
+          python3 .\build.py --portable --hwcodec --flutter --vram --skip-portable-pack
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustdesk-windows-custom
+          path: flutter/build/windows/x64/runner/Release/**
+          if-no-files-found: error
