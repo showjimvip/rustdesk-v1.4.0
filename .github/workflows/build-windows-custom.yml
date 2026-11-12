@@ -2,6 +2,9 @@ name: Build Windows Custom
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - trae/agent-c2bwBN
 
 permissions:
   contents: read
