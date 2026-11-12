@@ -60,6 +60,7 @@ pub const PLATFORM_ANDROID: &str = "Android";
 
 pub const TIMER_OUT: Duration = Duration::from_secs(1);
 pub const DEFAULT_KEEP_ALIVE: i32 = 60_000;
+pub const DEFAULT_RELAY_SERVER: &str = "xqstudio.x3322.net:21117";
 
 const MIN_VER_MULTI_UI_SESSION: &str = "1.2.4";
 
