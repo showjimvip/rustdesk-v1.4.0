@@ -77,7 +77,14 @@ jobs:
           VCPKG_DEFAULT_HOST_TRIPLET: x64-windows-static
           VCPKG_BINARY_SOURCES: clear
         run: |
-          $VCPKG_ROOT/vcpkg install --triplet x64-windows-static --x-install-root="$VCPKG_ROOT/installed"
+          for attempt in 1 2 3; do
+            echo "vcpkg install attempt $attempt"
+            if $VCPKG_ROOT/vcpkg install --triplet x64-windows-static --x-install-root="$VCPKG_ROOT/installed"; then
+              exit 0
+            fi
+            sleep 60
+          done
+          exit 1
 
       - name: Generate flutter rust bridge
         shell: bash
