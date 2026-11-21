@@ -48,6 +48,21 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
+      - name: Ensure Dart frontend server snapshot
+        shell: pwsh
+        run: |
+          $flutterRoot = (Get-Command flutter).Source | Split-Path -Parent | Split-Path -Parent
+          $cache = Join-Path $flutterRoot "bin\cache"
+          $snap = Join-Path $cache "dart-sdk\bin\snapshots\frontend_server.dart.snapshot"
+          if (-not (Test-Path $snap)) {
+            Write-Host "frontend_server snapshot missing, refreshing Dart SDK"
+            Remove-Item -Recurse -Force (Join-Path $cache "dart-sdk") -ErrorAction SilentlyContinue
+            Get-ChildItem $cache -Filter "*dart-sdk*.stamp" -ErrorAction SilentlyContinue | Remove-Item -Force
+            flutter doctor -v
+            flutter precache --windows
+          }
+          if (-not (Test-Path $snap)) { throw "frontend_server.dart.snapshot still missing after repair" }
+
       - name: Replace engine with rustdesk custom flutter engine
         shell: pwsh
         run: |
